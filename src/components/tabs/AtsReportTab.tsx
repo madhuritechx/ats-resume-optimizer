@@ -8,12 +8,25 @@ function MatchRing({ percent }: { percent: number }) {
   const radius = 52
   const circumference = 2 * Math.PI * radius
   const offset = circumference - (percent / 100) * circumference
-  const color =
+  const textColor =
     percent >= 80 ? 'text-emerald-500' : percent >= 60 ? 'text-amber-500' : 'text-rose-500'
+  const stops =
+    percent >= 80
+      ? ['#34d399', '#059669']
+      : percent >= 60
+        ? ['#fbbf24', '#d97706']
+        : ['#fb7185', '#e11d48']
+  const gradId = 'ring-grad'
 
   return (
     <div className="relative flex h-36 w-36 items-center justify-center">
       <svg className="h-36 w-36 -rotate-90" viewBox="0 0 120 120">
+        <defs>
+          <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor={stops[0]} />
+            <stop offset="100%" stopColor={stops[1]} />
+          </linearGradient>
+        </defs>
         <circle
           cx="60"
           cy="60"
@@ -31,12 +44,12 @@ function MatchRing({ percent }: { percent: number }) {
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
-          className={`${color} transition-[stroke-dashoffset] duration-1000 ease-out`}
-          stroke="currentColor"
+          stroke={`url(#${gradId})`}
+          className="transition-[stroke-dashoffset] duration-1000 ease-out"
         />
       </svg>
       <div className="absolute flex flex-col items-center">
-        <span className={`text-3xl font-bold ${color}`}>{Math.round(percent)}%</span>
+        <span className={`text-3xl font-bold ${textColor}`}>{Math.round(percent)}%</span>
         <span className="text-xs text-slate-500 dark:text-slate-400">ATS Match</span>
       </div>
     </div>

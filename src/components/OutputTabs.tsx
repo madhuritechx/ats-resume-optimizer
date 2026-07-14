@@ -32,20 +32,22 @@ export default function OutputTabs({ result }: Props) {
       </div>
 
       <div className="card overflow-hidden">
-        <div className="scroll-area flex gap-1 overflow-x-auto border-b border-slate-200 p-1.5 dark:border-slate-800">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                tab === t.id
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="scroll-area overflow-x-auto border-b border-slate-200 p-3 dark:border-slate-800">
+          <div className="inline-flex gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800/70">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`whitespace-nowrap rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
+                  tab === t.id
+                    ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-900/5 dark:bg-slate-700 dark:text-white dark:ring-white/5'
+                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="p-4 sm:p-6">

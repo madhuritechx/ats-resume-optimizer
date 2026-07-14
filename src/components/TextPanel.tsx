@@ -35,7 +35,7 @@ export default function TextPanel({
   const chars = value.length
 
   return (
-    <section className="card flex min-h-[420px] flex-col overflow-hidden">
+    <section className="card card-hover flex min-h-[420px] flex-col overflow-hidden">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
         <div className="flex items-center gap-2">
           <span className={`h-2.5 w-2.5 rounded-full ${accentDot[accent]}`} />

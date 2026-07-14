@@ -1,14 +1,13 @@
 import { useState } from 'react'
 import { useTheme } from './hooks/useTheme'
-import { optimizeResume, getApiKey } from './lib/claude'
+import { optimizeResume } from './lib/claude'
 import type { OptimizationResult } from './lib/types'
 import JobDescriptionPanel from './components/JobDescriptionPanel'
 import ResumePanel from './components/ResumePanel'
 import ActionBar from './components/ActionBar'
 import OutputTabs from './components/OutputTabs'
 import Loading from './components/Loading'
-import ApiKeyModal from './components/ApiKeyModal'
-import { SunIcon, MoonIcon, KeyIcon } from './components/Icons'
+import { SunIcon, MoonIcon } from './components/Icons'
 
 export default function App() {
   const { theme, toggle } = useTheme()
@@ -17,18 +16,11 @@ export default function App() {
   const [result, setResult] = useState<OptimizationResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [keyModalOpen, setKeyModalOpen] = useState(false)
 
   const canOptimize = jobDescription.trim().length > 20 && resume.trim().length > 20
 
   const handleOptimize = async () => {
     setError(null)
-
-    if (!getApiKey()) {
-      setKeyModalOpen(true)
-      return
-    }
-
     setLoading(true)
     setResult(null)
     try {
@@ -71,14 +63,10 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1.5">
-            <button
-              className="btn-ghost"
-              onClick={() => setKeyModalOpen(true)}
-              title="Set Anthropic API key"
-            >
-              <KeyIcon />
-              <span className="hidden sm:inline">{getApiKey() ? 'API Key' : 'Add Key'}</span>
-            </button>
+            <span className="hidden items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300 sm:inline-flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              Free · no API key needed
+            </span>
             <button
               className="btn-ghost !px-2"
               onClick={toggle}
@@ -122,11 +110,8 @@ export default function App() {
       </main>
 
       <footer className="mx-auto max-w-7xl px-4 py-8 text-center text-xs text-slate-400 dark:text-slate-600 sm:px-6">
-        Runs entirely in your browser · Your resume and API key never leave your device except to
-        call Claude directly.
+        Runs in your browser · Powered by Claude via Puter.js — free, with no API key required.
       </footer>
-
-      <ApiKeyModal open={keyModalOpen} onClose={() => setKeyModalOpen(false)} />
     </div>
   )
 }

@@ -44,6 +44,9 @@
       rel="stylesheet"
     />
 
+    <!-- Puter.js: free, keyless access to Claude (runs in the browser) -->
+    <script src="https://js.puter.com/v2/"></script>
+
     <!-- Libraries (UMD globals) -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -103,8 +106,7 @@
       const html = htm.bind(React.createElement);
 
       /* ============================ Constants ============================ */
-      const MODEL = 'claude-opus-4-8';
-      const KEY_STORAGE = 'ats-anthropic-key';
+      const MODEL = 'claude-opus-4';
       const THEME_STORAGE = 'ats-theme';
 
       const SYSTEM_PROMPT = `You are an elite ATS (Applicant Tracking System) resume optimization engine and senior technical recruiter.
@@ -244,10 +246,7 @@ B.S. in Computer Science — State University, 2017
 Skills
 React, JavaScript, TypeScript, CSS, HTML, Git, Jest, REST APIs`;
 
-      /* ============================ API ============================ */
-      const getApiKey = () => { try { return localStorage.getItem(KEY_STORAGE) || ''; } catch { return ''; } };
-      const setApiKey = (k) => { try { k ? localStorage.setItem(KEY_STORAGE, k) : localStorage.removeItem(KEY_STORAGE); } catch {} };
-
+      /* ============================ API (Puter.js — free, keyless) ============================ */
       function extractJson(text) {
         const s = text.indexOf('{'), e = text.lastIndexOf('}');
         if (s === -1 || e === -1 || e <= s) throw new Error('No JSON object found in the model response.');
@@ -276,34 +275,27 @@ React, JavaScript, TypeScript, CSS, HTML, Git, Jest, REST APIs`;
         };
       }
 
+      function extractText(resp) {
+        if (typeof resp === 'string') return resp;
+        const content = (resp && resp.message && resp.message.content) || (resp && resp.content);
+        if (typeof content === 'string') return content;
+        if (Array.isArray(content)) return content.map((b) => (typeof b === 'string' ? b : (b && b.text) || '')).join('');
+        if (resp && typeof resp.text === 'string') return resp.text;
+        return String(resp == null ? '' : resp);
+      }
+
       async function optimizeResume(jobDescription, resume) {
-        const apiKey = getApiKey();
-        if (!apiKey) throw new Error('Missing Anthropic API key. Add it via the key button in the header.');
+        if (typeof puter === 'undefined') throw new Error('Puter.js failed to load. Check your connection and refresh the page.');
 
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true',
-          },
-          body: JSON.stringify({
-            model: MODEL,
-            max_tokens: 16000,
-            system: SYSTEM_PROMPT,
-            messages: [{ role: 'user', content: buildUserPrompt(jobDescription, resume) }],
-          }),
-        });
+        const prompt = SYSTEM_PROMPT + '\n\n' + buildUserPrompt(jobDescription, resume);
 
-        if (!res.ok) {
-          let msg = 'Request failed (' + res.status + ').';
-          try { const j = await res.json(); if (j.error && j.error.message) msg = j.error.message; } catch {}
-          throw new Error(msg);
-        }
+        let resp;
+        try { resp = await puter.ai.chat(prompt, { model: MODEL, max_tokens: 16000 }); }
+        catch (err) { throw new Error('The AI request failed. ' + ((err && err.message) || err)); }
 
-        const data = await res.json();
-        const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+        const text = extractText(resp);
+        if (!text.trim()) throw new Error('The model returned an empty response. Please try again.');
+
         let parsed;
         try { parsed = JSON.parse(extractJson(text)); }
         catch (err) { throw new Error('Could not parse the optimization result. ' + (err.message || err)); }
@@ -489,37 +481,6 @@ React, JavaScript, TypeScript, CSS, HTML, Git, Jest, REST APIs`;
             </div>
             <div class="h-1 w-full max-w-md overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
               <div class="h-full rounded-full bg-indigo-500 transition-[width] duration-700 ease-out" style=${{ width: ((step + 1) / LOADING_STEPS.length) * 100 + '%' }}></div>
-            </div>
-          </div>`;
-      }
-
-      /* ============================ ApiKeyModal ============================ */
-      function ApiKeyModal({ open, onClose }) {
-        const [key, setKey] = useState('');
-        useEffect(() => { if (open) setKey(getApiKey()); }, [open]);
-        if (!open) return null;
-        const save = () => { setApiKey(key.trim()); onClose(); };
-        return html`
-          <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm" onClick=${onClose}>
-            <div class="card animate-fade-in w-full max-w-md p-6" onClick=${(e) => e.stopPropagation()}>
-              <div class="mb-4 flex items-center gap-3">
-                <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-500 dark:bg-indigo-500/10">${Key({ size: 20 })}</span>
-                <div>
-                  <h3 class="text-base font-semibold text-slate-900 dark:text-white">Anthropic API Key</h3>
-                  <p class="text-xs text-slate-500 dark:text-slate-400">Stored locally in your browser only</p>
-                </div>
-              </div>
-              <input type="password" value=${key} onChange=${(e) => setKey(e.target.value)} placeholder="sk-ant-…" autoFocus
-                onKeyDown=${(e) => e.key === 'Enter' && save()}
-                class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-sm text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
-              <p class="mt-3 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-                This app runs entirely in your browser with no backend. Your key is saved to <code class="mx-1 rounded bg-slate-100 px-1 dark:bg-slate-800">localStorage</code> and used only to call Claude directly. Get a key at ${' '}
-                <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" class="text-indigo-600 underline dark:text-indigo-400">console.anthropic.com</a>.
-              </p>
-              <div class="mt-5 flex justify-end gap-2">
-                <button class="btn-secondary" onClick=${onClose}>Cancel</button>
-                <button class="btn-primary" onClick=${save}>Save Key</button>
-              </div>
             </div>
           </div>`;
       }
@@ -814,14 +775,11 @@ React, JavaScript, TypeScript, CSS, HTML, Git, Jest, REST APIs`;
         const [result, setResult] = useState(null);
         const [loading, setLoading] = useState(false);
         const [error, setError] = useState(null);
-        const [keyModalOpen, setKeyModalOpen] = useState(false);
-        const [hasKey, setHasKey] = useState(!!getApiKey());
 
         const canOptimize = jobDescription.trim().length > 20 && resume.trim().length > 20;
 
         const handleOptimize = async () => {
           setError(null);
-          if (!getApiKey()) { setKeyModalOpen(true); return; }
           setLoading(true); setResult(null);
           try {
             const res = await optimizeResume(jobDescription, resume);
@@ -831,7 +789,6 @@ React, JavaScript, TypeScript, CSS, HTML, Git, Jest, REST APIs`;
           finally { setLoading(false); }
         };
 
-        const closeKeyModal = () => { setKeyModalOpen(false); setHasKey(!!getApiKey()); };
         const hint = !canOptimize ? 'Paste a job description and your resume to begin.' : undefined;
 
         return html`
@@ -846,7 +803,9 @@ React, JavaScript, TypeScript, CSS, HTML, Git, Jest, REST APIs`;
                   </div>
                 </div>
                 <div class="flex items-center gap-1.5">
-                  <button class="btn-ghost" onClick=${() => setKeyModalOpen(true)} title="Set Anthropic API key">${Key()}<span class="hidden sm:inline">${hasKey ? 'API Key' : 'Add Key'}</span></button>
+                  <span class="hidden items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300 sm:inline-flex">
+                    <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>Free · no API key needed
+                  </span>
                   <button class="btn-ghost !px-2" onClick=${toggle} title="Toggle theme">${theme === 'dark' ? Sun() : Moon()}</button>
                 </div>
               </div>
@@ -866,9 +825,7 @@ React, JavaScript, TypeScript, CSS, HTML, Git, Jest, REST APIs`;
               </div>
             </main>
 
-            <footer class="mx-auto max-w-7xl px-4 py-8 text-center text-xs text-slate-400 dark:text-slate-600 sm:px-6">Runs entirely in your browser · Your resume and API key never leave your device except to call Claude directly.</footer>
-
-            <${ApiKeyModal} open=${keyModalOpen} onClose=${closeKeyModal} />
+            <footer class="mx-auto max-w-7xl px-4 py-8 text-center text-xs text-slate-400 dark:text-slate-600 sm:px-6">Runs in your browser · Powered by Claude via Puter.js — free, with no API key required.</footer>
           </div>`;
       }
 

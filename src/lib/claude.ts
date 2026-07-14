@@ -1,26 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompt'
 import type { OptimizationResult } from './types'
 
-const MODEL = 'claude-opus-4-8'
-const API_KEY_STORAGE = 'ats-anthropic-key'
-
-export function getApiKey(): string {
-  try {
-    return localStorage.getItem(API_KEY_STORAGE) ?? ''
-  } catch {
-    return ''
-  }
-}
-
-export function setApiKey(key: string): void {
-  try {
-    if (key) localStorage.setItem(API_KEY_STORAGE, key)
-    else localStorage.removeItem(API_KEY_STORAGE)
-  } catch {
-    /* ignore */
-  }
-}
+// Claude models available through Puter.js (free, keyless, browser-side).
+const MODEL = 'claude-opus-4'
 
 /** Pull the first balanced JSON object out of a text blob. */
 function extractJson(text: string): string {
@@ -32,28 +14,49 @@ function extractJson(text: string): string {
   return text.slice(start, end + 1)
 }
 
+/** Puter returns different shapes per provider — normalize to plain text. */
+function extractText(resp: unknown): string {
+  if (typeof resp === 'string') return resp
+  const r = resp as {
+    message?: { content?: unknown }
+    content?: unknown
+    text?: string
+  }
+  const content = r?.message?.content ?? r?.content
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .map((b) => (typeof b === 'string' ? b : (b?.text ?? '')))
+      .join('')
+  }
+  if (typeof r?.text === 'string') return r.text
+  return String(resp ?? '')
+}
+
 export async function optimizeResume(
   jobDescription: string,
   resume: string,
 ): Promise<OptimizationResult> {
-  const apiKey = getApiKey()
-  if (!apiKey) {
-    throw new Error('Missing Anthropic API key. Add it via the key button in the header.')
+  if (typeof puter === 'undefined') {
+    throw new Error('Puter.js failed to load. Check your connection and refresh the page.')
   }
 
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true })
+  // Combine system + user into one prompt for cross-provider reliability.
+  const prompt = `${SYSTEM_PROMPT}\n\n${buildUserPrompt(jobDescription, resume)}`
 
-  const message = await client.messages.create({
-    model: MODEL,
-    max_tokens: 16000,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: buildUserPrompt(jobDescription, resume) }],
-  })
+  let resp: unknown
+  try {
+    resp = await puter.ai.chat(prompt, { model: MODEL, max_tokens: 16000 })
+  } catch (err) {
+    throw new Error(
+      'The AI request failed. ' + (err instanceof Error ? err.message : String(err)),
+    )
+  }
 
-  const text = message.content
-    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('')
+  const text = extractText(resp)
+  if (!text.trim()) {
+    throw new Error('The model returned an empty response. Please try again.')
+  }
 
   let parsed: OptimizationResult
   try {

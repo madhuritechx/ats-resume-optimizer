@@ -1,8 +1,28 @@
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompt'
 import type { OptimizationResult } from './types'
 
-// Claude models available through Puter.js (free, keyless, browser-side).
-const MODEL = 'claude-opus-4'
+// Claude model via Puter.js (free, keyless, browser-side).
+// Sonnet-tier is Puter's free offering; premium models (Opus) require Puter credits.
+const MODEL = 'claude-sonnet-4'
+
+/** Puter rejects with plain objects — dig out a human-readable message. */
+function describeError(err: unknown): string {
+  if (!err) return 'Unknown error.'
+  if (typeof err === 'string') return err
+  const e = err as {
+    message?: string
+    error?: string | { message?: string; delegate?: string }
+    code?: string
+  }
+  if (typeof e.message === 'string' && e.message) return e.message
+  if (typeof e.error === 'string' && e.error) return e.error
+  if (e.error && typeof e.error === 'object' && e.error.message) return e.error.message
+  try {
+    return JSON.stringify(err)
+  } catch {
+    return String(err)
+  }
+}
 
 /** Pull the first balanced JSON object out of a text blob. */
 function extractJson(text: string): string {
@@ -48,9 +68,13 @@ export async function optimizeResume(
   try {
     resp = await puter.ai.chat(prompt, { model: MODEL, max_tokens: 16000 })
   } catch (err) {
-    throw new Error(
-      'The AI request failed. ' + (err instanceof Error ? err.message : String(err)),
-    )
+    throw new Error('The AI request failed. ' + describeError(err))
+  }
+
+  // Puter can resolve with an error payload instead of rejecting.
+  const errShape = resp as { success?: boolean; error?: unknown }
+  if (errShape && errShape.success === false) {
+    throw new Error('The AI request failed. ' + describeError(errShape.error ?? errShape))
   }
 
   const text = extractText(resp)

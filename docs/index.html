@@ -106,7 +106,7 @@
       const html = htm.bind(React.createElement);
 
       /* ============================ Constants ============================ */
-      const MODEL = 'claude-opus-4';
+      const MODEL = 'claude-sonnet-4';
       const THEME_STORAGE = 'ats-theme';
 
       const SYSTEM_PROMPT = `You are an elite ATS (Applicant Tracking System) resume optimization engine and senior technical recruiter.
@@ -275,6 +275,15 @@ React, JavaScript, TypeScript, CSS, HTML, Git, Jest, REST APIs`;
         };
       }
 
+      function describeError(err) {
+        if (!err) return 'Unknown error.';
+        if (typeof err === 'string') return err;
+        if (typeof err.message === 'string' && err.message) return err.message;
+        if (typeof err.error === 'string' && err.error) return err.error;
+        if (err.error && typeof err.error === 'object' && err.error.message) return err.error.message;
+        try { return JSON.stringify(err); } catch { return String(err); }
+      }
+
       function extractText(resp) {
         if (typeof resp === 'string') return resp;
         const content = (resp && resp.message && resp.message.content) || (resp && resp.content);
@@ -291,7 +300,11 @@ React, JavaScript, TypeScript, CSS, HTML, Git, Jest, REST APIs`;
 
         let resp;
         try { resp = await puter.ai.chat(prompt, { model: MODEL, max_tokens: 16000 }); }
-        catch (err) { throw new Error('The AI request failed. ' + ((err && err.message) || err)); }
+        catch (err) { throw new Error('The AI request failed. ' + describeError(err)); }
+
+        if (resp && resp.success === false) {
+          throw new Error('The AI request failed. ' + describeError(resp.error != null ? resp.error : resp));
+        }
 
         const text = extractText(resp);
         if (!text.trim()) throw new Error('The model returned an empty response. Please try again.');

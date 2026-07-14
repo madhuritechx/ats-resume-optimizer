@@ -3,35 +3,27 @@ import type { OptimizationResult } from './types'
 
 // Claude models via Puter.js (free, keyless, browser-side), tried in order.
 // Sonnet-tier is Puter's free offering; premium models (Opus) require Puter credits.
-// The list guards against Puter/Anthropic renaming or retiring a specific model id.
-const MODELS = ['claude-sonnet-4-5', 'claude-sonnet-4', 'claude-3-7-sonnet', 'claude-3-5-sonnet']
+// We try each in turn so a retired id, a 404, or a credits-gated model just
+// falls through to the next working one.
+const MODELS = ['claude-sonnet-4', 'claude-3-7-sonnet', 'claude-3-5-sonnet', 'claude-sonnet-4-5']
 
-/** A model-not-found / 404 means "try the next model", not "give up". */
-function isModelNotFound(err: unknown): boolean {
-  const s = describeError(err).toLowerCase()
-  return s.includes('not_found') || s.includes('404') || s.includes('model:')
-}
-
-/** Call Puter, falling back through MODELS on not-found errors. */
+/** Call Puter, falling through MODELS on any failure; surface the last error. */
 async function chatWithFallback(prompt: string): Promise<unknown> {
-  let lastErr: unknown = null
+  let lastErr: unknown = 'Unknown error.'
   for (const model of MODELS) {
     try {
       const resp = await puter.ai.chat(prompt, { model, max_tokens: 16000 })
       const shape = resp as { success?: boolean; error?: unknown }
       if (shape && shape.success === false) {
         lastErr = shape.error ?? shape
-        if (isModelNotFound(lastErr)) continue
-        throw new Error(describeError(lastErr))
+        continue
       }
       return resp
     } catch (err) {
       lastErr = err
-      if (isModelNotFound(err)) continue // this model is gone; try the next
-      throw new Error('The AI request failed. ' + describeError(err))
     }
   }
-  throw new Error('No available Claude model on Puter. ' + describeError(lastErr))
+  throw new Error('The AI request failed. ' + describeError(lastErr))
 }
 
 /** Puter rejects with plain objects — dig out a human-readable message. */

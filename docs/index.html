@@ -106,8 +106,8 @@
       const html = htm.bind(React.createElement);
 
       /* ============================ Constants ============================ */
-      // Tried in order; a not-found/404 falls through to the next model.
-      const MODELS = ['claude-sonnet-4-5', 'claude-sonnet-4', 'claude-3-7-sonnet', 'claude-3-5-sonnet'];
+      // Tried in order; any failure (404, retired id, credits-gated) falls through to the next.
+      const MODELS = ['claude-sonnet-4', 'claude-3-7-sonnet', 'claude-3-5-sonnet', 'claude-sonnet-4-5'];
       const THEME_STORAGE = 'ats-theme';
 
       const SYSTEM_PROMPT = `You are an elite ATS (Applicant Tracking System) resume optimization engine and senior technical recruiter.
@@ -306,29 +306,18 @@ React, JavaScript, TypeScript, CSS, HTML, Git, Jest, REST APIs`;
         try { return JSON.stringify(err); } catch { return String(err); }
       }
 
-      function isModelNotFound(err) {
-        const s = describeError(err).toLowerCase();
-        return s.includes('not_found') || s.includes('404') || s.includes('model:');
-      }
-
       async function chatWithFallback(prompt) {
-        let lastErr = null;
+        let lastErr = 'Unknown error.';
         for (const model of MODELS) {
           try {
             const resp = await puter.ai.chat(prompt, { model, max_tokens: 16000 });
-            if (resp && resp.success === false) {
-              lastErr = resp.error != null ? resp.error : resp;
-              if (isModelNotFound(lastErr)) continue;
-              throw new Error(describeError(lastErr));
-            }
+            if (resp && resp.success === false) { lastErr = resp.error != null ? resp.error : resp; continue; }
             return resp;
           } catch (err) {
             lastErr = err;
-            if (isModelNotFound(err)) continue;
-            throw new Error('The AI request failed. ' + describeError(err));
           }
         }
-        throw new Error('No available Claude model on Puter. ' + describeError(lastErr));
+        throw new Error('The AI request failed. ' + describeError(lastErr));
       }
 
       function extractText(resp) {

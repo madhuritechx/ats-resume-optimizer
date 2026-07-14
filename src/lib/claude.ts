@@ -1,9 +1,38 @@
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompt'
 import type { OptimizationResult } from './types'
 
-// Claude model via Puter.js (free, keyless, browser-side).
+// Claude models via Puter.js (free, keyless, browser-side), tried in order.
 // Sonnet-tier is Puter's free offering; premium models (Opus) require Puter credits.
-const MODEL = 'claude-sonnet-4'
+// The list guards against Puter/Anthropic renaming or retiring a specific model id.
+const MODELS = ['claude-sonnet-4-5', 'claude-sonnet-4', 'claude-3-7-sonnet', 'claude-3-5-sonnet']
+
+/** A model-not-found / 404 means "try the next model", not "give up". */
+function isModelNotFound(err: unknown): boolean {
+  const s = describeError(err).toLowerCase()
+  return s.includes('not_found') || s.includes('404') || s.includes('model:')
+}
+
+/** Call Puter, falling back through MODELS on not-found errors. */
+async function chatWithFallback(prompt: string): Promise<unknown> {
+  let lastErr: unknown = null
+  for (const model of MODELS) {
+    try {
+      const resp = await puter.ai.chat(prompt, { model, max_tokens: 16000 })
+      const shape = resp as { success?: boolean; error?: unknown }
+      if (shape && shape.success === false) {
+        lastErr = shape.error ?? shape
+        if (isModelNotFound(lastErr)) continue
+        throw new Error(describeError(lastErr))
+      }
+      return resp
+    } catch (err) {
+      lastErr = err
+      if (isModelNotFound(err)) continue // this model is gone; try the next
+      throw new Error('The AI request failed. ' + describeError(err))
+    }
+  }
+  throw new Error('No available Claude model on Puter. ' + describeError(lastErr))
+}
 
 /** Puter rejects with plain objects — dig out a human-readable message. */
 function describeError(err: unknown): string {
@@ -64,19 +93,7 @@ export async function optimizeResume(
   // Combine system + user into one prompt for cross-provider reliability.
   const prompt = `${SYSTEM_PROMPT}\n\n${buildUserPrompt(jobDescription, resume)}`
 
-  let resp: unknown
-  try {
-    resp = await puter.ai.chat(prompt, { model: MODEL, max_tokens: 16000 })
-  } catch (err) {
-    throw new Error('The AI request failed. ' + describeError(err))
-  }
-
-  // Puter can resolve with an error payload instead of rejecting.
-  const errShape = resp as { success?: boolean; error?: unknown }
-  if (errShape && errShape.success === false) {
-    throw new Error('The AI request failed. ' + describeError(errShape.error ?? errShape))
-  }
-
+  const resp = await chatWithFallback(prompt)
   const text = extractText(resp)
   if (!text.trim()) {
     throw new Error('The model returned an empty response. Please try again.')

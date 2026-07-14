@@ -26,6 +26,27 @@ If a required keyword or skill is genuinely NOT supported by the resume, you mus
 Preserve all dates, employment history, company names, and chronology exactly.
 Keep bullet-point formatting. Keep the resume concise and professional. Support resumes up to 10 pages — never truncate.
 
+WRITING STYLE (this is extremely important):
+The rewritten resume must NEVER sound AI-generated. Write as if an experienced recruiter or career coach edited the resume by hand.
+- Use natural, conversational professional English.
+- Use UK English spelling throughout (e.g. optimise, organise, specialise, analyse, behaviour, centre, licence, catalogue, programme). Never use American spelling. The only exception: keep the exact spelling of proper nouns, technology names, and keywords taken directly from the job description (e.g. do not alter "JavaScript" or a tool's real name).
+- No corporate buzzword stuffing.
+- No clichés.
+- No exaggerated or inflated claims.
+- No repetitive sentence structure. Vary how bullets begin; do not start every line the same way.
+- Avoid overly polished AI language. Prefer simple, plain words.
+- Every bullet should read as if a real engineer wrote it.
+- NEVER use a double dash (--) or an em dash (—). Use a comma, the word "and", or a full stop instead.
+- NEVER use these words or phrases: "leveraged", "synergised", "passionate professional", "results-driven", "dynamic professional", "highly motivated". Do NOT use "utilised" unless it is genuinely the right word (prefer "used").
+- Prefer simple, direct action verbs, for example: Built, Developed, Improved, Introduced, Automated, Reduced, Designed, Validated, Led, Wrote, Shipped, Tested, Migrated, Fixed.
+  For example, instead of "Leveraged cutting-edge technologies to drive results", write "Built...", "Developed...", "Improved...", "Reduced...".
+
+ATS KEYWORD INTEGRATION:
+- Insert keywords naturally so each one fits the sentence it sits in.
+- Never keyword-stuff.
+- Every inserted keyword must fit naturally and the resume must still read as if written by a human.
+- Only add a keyword where the candidate's real experience genuinely supports it.
+
 You respond with ONLY a single valid JSON object, no markdown code fences, no commentary before or after.`
 
 export function buildUserPrompt(jobDescription: string, resume: string): string {

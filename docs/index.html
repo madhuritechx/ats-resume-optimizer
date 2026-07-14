@@ -106,7 +106,8 @@
       const html = htm.bind(React.createElement);
 
       /* ============================ Constants ============================ */
-      const MODEL = 'claude-sonnet-4';
+      // Tried in order; a not-found/404 falls through to the next model.
+      const MODELS = ['claude-sonnet-4-5', 'claude-sonnet-4', 'claude-3-7-sonnet', 'claude-3-5-sonnet'];
       const THEME_STORAGE = 'ats-theme';
 
       const SYSTEM_PROMPT = `You are an elite ATS (Applicant Tracking System) resume optimization engine and senior technical recruiter.
@@ -136,6 +137,27 @@ If a required keyword or skill is genuinely NOT supported by the resume, you mus
 
 Preserve all dates, employment history, company names, and chronology exactly.
 Keep bullet-point formatting. Keep the resume concise and professional. Support resumes up to 10 pages — never truncate.
+
+WRITING STYLE (this is extremely important):
+The rewritten resume must NEVER sound AI-generated. Write as if an experienced recruiter or career coach edited the resume by hand.
+- Use natural, conversational professional English.
+- Use UK English spelling throughout (e.g. optimise, organise, specialise, analyse, behaviour, centre, licence, catalogue, programme). Never use American spelling. The only exception: keep the exact spelling of proper nouns, technology names, and keywords taken directly from the job description (e.g. do not alter "JavaScript" or a tool's real name).
+- No corporate buzzword stuffing.
+- No clichés.
+- No exaggerated or inflated claims.
+- No repetitive sentence structure. Vary how bullets begin; do not start every line the same way.
+- Avoid overly polished AI language. Prefer simple, plain words.
+- Every bullet should read as if a real engineer wrote it.
+- NEVER use a double dash (--) or an em dash (—). Use a comma, the word "and", or a full stop instead.
+- NEVER use these words or phrases: "leveraged", "synergised", "passionate professional", "results-driven", "dynamic professional", "highly motivated". Do NOT use "utilised" unless it is genuinely the right word (prefer "used").
+- Prefer simple, direct action verbs, for example: Built, Developed, Improved, Introduced, Automated, Reduced, Designed, Validated, Led, Wrote, Shipped, Tested, Migrated, Fixed.
+  For example, instead of "Leveraged cutting-edge technologies to drive results", write "Built...", "Developed...", "Improved...", "Reduced...".
+
+ATS KEYWORD INTEGRATION:
+- Insert keywords naturally so each one fits the sentence it sits in.
+- Never keyword-stuff.
+- Every inserted keyword must fit naturally and the resume must still read as if written by a human.
+- Only add a keyword where the candidate's real experience genuinely supports it.
 
 You respond with ONLY a single valid JSON object, no markdown code fences, no commentary before or after.`;
 
@@ -284,6 +306,31 @@ React, JavaScript, TypeScript, CSS, HTML, Git, Jest, REST APIs`;
         try { return JSON.stringify(err); } catch { return String(err); }
       }
 
+      function isModelNotFound(err) {
+        const s = describeError(err).toLowerCase();
+        return s.includes('not_found') || s.includes('404') || s.includes('model:');
+      }
+
+      async function chatWithFallback(prompt) {
+        let lastErr = null;
+        for (const model of MODELS) {
+          try {
+            const resp = await puter.ai.chat(prompt, { model, max_tokens: 16000 });
+            if (resp && resp.success === false) {
+              lastErr = resp.error != null ? resp.error : resp;
+              if (isModelNotFound(lastErr)) continue;
+              throw new Error(describeError(lastErr));
+            }
+            return resp;
+          } catch (err) {
+            lastErr = err;
+            if (isModelNotFound(err)) continue;
+            throw new Error('The AI request failed. ' + describeError(err));
+          }
+        }
+        throw new Error('No available Claude model on Puter. ' + describeError(lastErr));
+      }
+
       function extractText(resp) {
         if (typeof resp === 'string') return resp;
         const content = (resp && resp.message && resp.message.content) || (resp && resp.content);
@@ -297,15 +344,7 @@ React, JavaScript, TypeScript, CSS, HTML, Git, Jest, REST APIs`;
         if (typeof puter === 'undefined') throw new Error('Puter.js failed to load. Check your connection and refresh the page.');
 
         const prompt = SYSTEM_PROMPT + '\n\n' + buildUserPrompt(jobDescription, resume);
-
-        let resp;
-        try { resp = await puter.ai.chat(prompt, { model: MODEL, max_tokens: 16000 }); }
-        catch (err) { throw new Error('The AI request failed. ' + describeError(err)); }
-
-        if (resp && resp.success === false) {
-          throw new Error('The AI request failed. ' + describeError(resp.error != null ? resp.error : resp));
-        }
-
+        const resp = await chatWithFallback(prompt);
         const text = extractText(resp);
         if (!text.trim()) throw new Error('The model returned an empty response. Please try again.');
 

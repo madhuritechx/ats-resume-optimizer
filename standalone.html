@@ -1,0 +1,878 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ATS Resume Optimizer</title>
+
+    <!-- Apply theme before paint -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('ats-theme');
+          if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
+
+    <!-- Tailwind (Play CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+            keyframes: {
+              'fade-in': {
+                '0%': { opacity: '0', transform: 'translateY(4px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+            },
+            animation: { 'fade-in': 'fade-in 0.3s ease-out' },
+          },
+        },
+      };
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Libraries (UMD globals) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/htm@3.1.1/dist/htm.js" crossorigin></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+
+    <style type="text/tailwindcss">
+      @layer base {
+        body {
+          @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100;
+          font-family: Inter, system-ui, sans-serif;
+          -webkit-font-smoothing: antialiased;
+        }
+      }
+      @layer components {
+        .card {
+          @apply rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900;
+        }
+        .btn {
+          @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50;
+        }
+        .btn-ghost {
+          @apply btn text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800;
+        }
+        .btn-secondary {
+          @apply btn border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700;
+        }
+        .btn-primary {
+          @apply btn bg-indigo-600 text-white hover:bg-indigo-500 shadow-sm;
+        }
+      }
+      .prose-resume { @apply text-sm leading-relaxed text-slate-800 dark:text-slate-200; }
+      .prose-resume h1 { @apply mb-1 mt-4 text-xl font-bold text-slate-900 dark:text-white; }
+      .prose-resume h2 { @apply mb-1 mt-4 border-b border-slate-200 pb-1 text-base font-bold uppercase tracking-wide text-slate-900 dark:border-slate-700 dark:text-white; }
+      .prose-resume h3 { @apply mb-0.5 mt-3 text-sm font-semibold text-slate-900 dark:text-white; }
+      .prose-resume p { @apply my-1.5; }
+      .prose-resume ul { @apply my-1.5 list-disc space-y-1 pl-5; }
+      .prose-resume ol { @apply my-1.5 list-decimal space-y-1 pl-5; }
+      .prose-resume a { @apply text-indigo-600 underline dark:text-indigo-400; }
+      .prose-resume strong { @apply font-semibold text-slate-900 dark:text-white; }
+      .prose-resume hr { @apply my-3 border-slate-200 dark:border-slate-700; }
+      .prose-resume mark { @apply rounded bg-emerald-100 px-0.5 text-emerald-800 dark:bg-emerald-500/25 dark:text-emerald-200; }
+
+      textarea, .scroll-area { scrollbar-width: thin; scrollbar-color: rgb(148 163 184 / 0.4) transparent; }
+      textarea::-webkit-scrollbar, .scroll-area::-webkit-scrollbar { width: 8px; height: 8px; }
+      textarea::-webkit-scrollbar-thumb, .scroll-area::-webkit-scrollbar-thumb { background: rgb(148 163 184 / 0.4); border-radius: 9999px; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script>
+      const { useState, useMemo, useEffect, useRef } = React;
+      const html = htm.bind(React.createElement);
+
+      /* ============================ Constants ============================ */
+      const MODEL = 'claude-opus-4-8';
+      const KEY_STORAGE = 'ats-anthropic-key';
+      const THEME_STORAGE = 'ats-theme';
+
+      const SYSTEM_PROMPT = `You are an elite ATS (Applicant Tracking System) resume optimization engine and senior technical recruiter.
+
+Your single most important rule: you are 100% truthful. You optimize the presentation of a resume for a specific job description WITHOUT ever fabricating anything.
+
+You must NEVER:
+- invent experience, roles, or responsibilities the candidate did not have
+- invent projects, companies, employers, or clients
+- invent certifications, degrees, or education
+- invent metrics, numbers, percentages, or measurable outcomes
+- invent promotions or title changes
+- invent technologies, tools, or skills the candidate has not demonstrated
+- change employment dates, chronology, or company names
+- add keywords by claiming false experience
+
+You MAY only:
+- rewrite and rephrase existing content
+- reorganize and reorder existing content
+- strengthen wording with stronger, accurate action verbs
+- surface ATS keywords that are TRULY supported by the candidate's real experience
+- naturally mirror the job description's phrasing where it honestly matches the candidate
+- improve grammar, spelling, clarity, and conciseness
+- improve formatting and consistency
+
+If a required keyword or skill is genuinely NOT supported by the resume, you must leave it as a MISSING keyword in the report — do NOT insert it into the optimized resume. Missing keywords are surfaced as honest gaps, never fabricated.
+
+Preserve all dates, employment history, company names, and chronology exactly.
+Keep bullet-point formatting. Keep the resume concise and professional. Support resumes up to 10 pages — never truncate.
+
+You respond with ONLY a single valid JSON object, no markdown code fences, no commentary before or after.`;
+
+      function buildUserPrompt(jobDescription, resume) {
+        return `Optimize the RESUME below for the JOB DESCRIPTION below.
+
+Follow this process:
+1. Analyze the job description and extract: required skills, preferred skills, technologies, soft skills, responsibilities, domain keywords, ATS keywords, and action verbs.
+2. Analyze the resume.
+3. Identify: missing ATS keywords, weak wording, generic phrases, missing measurable achievements, missing technologies, and missing action verbs.
+4. Rewrite the resume per the truthfulness rules. Only include keywords truly supported by the candidate's real experience.
+
+Return a single JSON object with EXACTLY this shape:
+
+{
+  "optimizedResume": "string — the full rewritten resume in clean Markdown. Use # for name, ## for section headers, - for bullets. Preserve all real dates, companies, and chronology. Never truncate.",
+  "atsReport": {
+    "matchPercent": number (0-100, estimated ATS match after optimization),
+    "missingKeywords": ["keywords from the JD genuinely NOT supported by the resume — honest gaps"],
+    "matchedKeywords": ["keywords from the JD that the resume genuinely supports"],
+    "skillsAlignment": [{ "skill": "string", "coverage": number 0-100, "note": "short explanation" }],
+    "suggestedImprovements": ["actionable suggestions the candidate could pursue to close real gaps"]
+  },
+  "keywordComparison": [
+    { "keyword": "JD keyword", "resume": "how it appears in the resume, or empty string if absent", "status": "present" | "weak" | "missing" }
+  ],
+  "changeLog": [
+    { "section": "which resume section", "original": "original text", "improved": "improved text", "reason": "why this change was made", "type": "keyword" | "wording" | "clarity" | "grammar" | "reorganize" }
+  ],
+  "scores": {
+    "ats": number 0-100,
+    "readability": number 0-100,
+    "keywordDensity": number 0-100,
+    "skillsCoverage": number 0-100,
+    "overallMatch": number 0-100
+  },
+  "insertedKeywords": ["truthful keywords/phrases newly surfaced into the optimized resume"]
+}
+
+Rules for scores: base them on the OPTIMIZED resume vs the job description. Be realistic, not inflated.
+Rules for changeLog: include EVERY meaningful change, one entry each. If nothing was changed in a section, omit it.
+
+=== JOB DESCRIPTION ===
+${jobDescription}
+
+=== RESUME ===
+${resume}
+
+Respond now with ONLY the JSON object.`;
+      }
+
+      const EXAMPLE_JOB_DESCRIPTION = `Senior Frontend Engineer — FinTech Platform
+
+About the role
+We are looking for a Senior Frontend Engineer to build the next generation of our customer-facing dashboard. You will work in a fast-paced, agile environment alongside product, design, and backend teams to ship reliable, accessible, high-performance web applications.
+
+Responsibilities
+- Design, build, and maintain scalable React + TypeScript applications
+- Collaborate with UX designers to deliver pixel-perfect, accessible interfaces (WCAG 2.1)
+- Optimize application performance and Core Web Vitals
+- Write unit and integration tests (Jest, React Testing Library)
+- Mentor junior engineers and drive code review culture
+- Partner with backend teams to design and consume REST and GraphQL APIs
+- Contribute to CI/CD pipelines and frontend build tooling
+
+Required skills
+- 5+ years of professional frontend development experience
+- Expert in React, TypeScript, and modern JavaScript (ES6+)
+- Strong CSS skills including responsive design and Tailwind or styled-components
+- Experience with state management (Redux, Zustand, or React Query)
+- Solid understanding of web performance optimization
+- Experience with automated testing
+
+Preferred skills
+- Experience in FinTech or regulated industries
+- Familiarity with Next.js and server-side rendering
+- Experience with GraphQL and Apollo Client
+- Knowledge of accessibility standards and tooling
+- Experience with design systems and component libraries
+
+We value ownership, clear communication, collaboration, and a bias for action.`;
+
+      const EXAMPLE_RESUME = `Jane Doe
+San Francisco, CA | jane.doe@email.com | (555) 123-4567 | linkedin.com/in/janedoe
+
+Summary
+Frontend developer with experience building web apps. Good team player who is responsible for various tasks and helps ship products.
+
+Experience
+
+Frontend Developer — Acme Payments
+Jan 2020 – Present
+- Worked on the company dashboard using React
+- Helped with making the site responsive
+- Was responsible for fixing bugs and doing code reviews
+- Used TypeScript for some projects
+- Worked with the backend team on APIs
+
+Web Developer — BrightApps
+Jun 2017 – Dec 2019
+- Built websites for clients using JavaScript and CSS
+- Did testing to make sure things worked
+- Helped junior developers when they had questions
+
+Education
+B.S. in Computer Science — State University, 2017
+
+Skills
+React, JavaScript, TypeScript, CSS, HTML, Git, Jest, REST APIs`;
+
+      /* ============================ API ============================ */
+      const getApiKey = () => { try { return localStorage.getItem(KEY_STORAGE) || ''; } catch { return ''; } };
+      const setApiKey = (k) => { try { k ? localStorage.setItem(KEY_STORAGE, k) : localStorage.removeItem(KEY_STORAGE); } catch {} };
+
+      function extractJson(text) {
+        const s = text.indexOf('{'), e = text.lastIndexOf('}');
+        if (s === -1 || e === -1 || e <= s) throw new Error('No JSON object found in the model response.');
+        return text.slice(s, e + 1);
+      }
+
+      function normalize(r) {
+        r = r || {};
+        const a = r.atsReport || {}, s = r.scores || {};
+        return {
+          optimizedResume: r.optimizedResume || '',
+          atsReport: {
+            matchPercent: a.matchPercent || 0,
+            missingKeywords: a.missingKeywords || [],
+            matchedKeywords: a.matchedKeywords || [],
+            skillsAlignment: a.skillsAlignment || [],
+            suggestedImprovements: a.suggestedImprovements || [],
+          },
+          keywordComparison: r.keywordComparison || [],
+          changeLog: r.changeLog || [],
+          scores: {
+            ats: s.ats || 0, readability: s.readability || 0, keywordDensity: s.keywordDensity || 0,
+            skillsCoverage: s.skillsCoverage || 0, overallMatch: s.overallMatch || 0,
+          },
+          insertedKeywords: r.insertedKeywords || [],
+        };
+      }
+
+      async function optimizeResume(jobDescription, resume) {
+        const apiKey = getApiKey();
+        if (!apiKey) throw new Error('Missing Anthropic API key. Add it via the key button in the header.');
+
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            max_tokens: 16000,
+            system: SYSTEM_PROMPT,
+            messages: [{ role: 'user', content: buildUserPrompt(jobDescription, resume) }],
+          }),
+        });
+
+        if (!res.ok) {
+          let msg = 'Request failed (' + res.status + ').';
+          try { const j = await res.json(); if (j.error && j.error.message) msg = j.error.message; } catch {}
+          throw new Error(msg);
+        }
+
+        const data = await res.json();
+        const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+        let parsed;
+        try { parsed = JSON.parse(extractJson(text)); }
+        catch (err) { throw new Error('Could not parse the optimization result. ' + (err.message || err)); }
+        return normalize(parsed);
+      }
+
+      /* ============================ Export helpers ============================ */
+      function parseMarkdown(md) {
+        const lines = [];
+        const strip = (s) => s.replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1').replace(/`(.+?)`/g, '$1').replace(/\[(.+?)\]\((.+?)\)/g, '$1');
+        for (const raw of md.split('\n')) {
+          const t = raw.replace(/\r$/, '').trim();
+          if (t === '') lines.push({ kind: 'blank', text: '' });
+          else if (/^#\s+/.test(t)) lines.push({ kind: 'h1', text: strip(t.replace(/^#\s+/, '')) });
+          else if (/^##\s+/.test(t)) lines.push({ kind: 'h2', text: strip(t.replace(/^##\s+/, '')) });
+          else if (/^###\s+/.test(t)) lines.push({ kind: 'h3', text: strip(t.replace(/^###\s+/, '')) });
+          else if (/^([-*])\s+/.test(t)) lines.push({ kind: 'bullet', text: strip(t.replace(/^([-*])\s+/, '')) });
+          else if (/^(---|\*\*\*|___)$/.test(t)) lines.push({ kind: 'hr', text: '' });
+          else lines.push({ kind: 'text', text: strip(t) });
+        }
+        return lines;
+      }
+
+      const copyToClipboard = (text) => navigator.clipboard.writeText(text);
+
+      function exportMarkdown(md, filename = 'optimized-resume.md') {
+        const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+        window.saveAs(blob, filename);
+      }
+
+      function exportPdf(md, filename = 'optimized-resume.pdf') {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+        const margin = 54, pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight();
+        const maxW = pw - margin * 2;
+        let y = margin;
+        const ensure = (n) => { if (y + n > ph - margin) { doc.addPage(); y = margin; } };
+        for (const line of parseMarkdown(md)) {
+          if (line.kind === 'blank') { y += 6; continue; }
+          if (line.kind === 'hr') { ensure(12); doc.setDrawColor(200); doc.line(margin, y, pw - margin, y); y += 12; continue; }
+          let size = 10, style = 'normal', indent = 0, prefix = '';
+          if (line.kind === 'h1') { size = 18; style = 'bold'; }
+          else if (line.kind === 'h2') { size = 12; style = 'bold'; }
+          else if (line.kind === 'h3') { size = 11; style = 'bold'; }
+          else if (line.kind === 'bullet') { indent = 14; prefix = '•  '; }
+          doc.setFont('helvetica', style); doc.setFontSize(size);
+          const wrapped = doc.splitTextToSize(prefix + line.text, maxW - indent);
+          const lh = size * 1.35;
+          for (const w of wrapped) { ensure(lh); doc.text(w, margin + indent, y); y += lh; }
+          if (line.kind[0] === 'h') y += 4;
+        }
+        doc.save(filename);
+      }
+
+      async function exportDocx(md, filename = 'optimized-resume.docx') {
+        const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = window.docx;
+        const children = [];
+        for (const line of parseMarkdown(md)) {
+          if (line.kind === 'blank') children.push(new Paragraph({ text: '' }));
+          else if (line.kind === 'hr') children.push(new Paragraph({ text: '', border: { bottom: { color: 'CCCCCC', space: 1, style: 'single', size: 6 } } }));
+          else if (line.kind === 'h1') children.push(new Paragraph({ heading: HeadingLevel.TITLE, alignment: AlignmentType.CENTER, children: [new TextRun({ text: line.text, bold: true })] }));
+          else if (line.kind === 'h2') children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: line.text.toUpperCase(), bold: true })] }));
+          else if (line.kind === 'h3') children.push(new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({ text: line.text, bold: true })] }));
+          else if (line.kind === 'bullet') children.push(new Paragraph({ text: line.text, bullet: { level: 0 } }));
+          else children.push(new Paragraph({ children: [new TextRun(line.text)] }));
+        }
+        const doc = new Document({ sections: [{ children }] });
+        const blob = await Packer.toBlob(doc);
+        window.saveAs(blob, filename);
+      }
+
+      /* ============================ Icons ============================ */
+      const svg = (children, props) => html`<svg width=${(props && props.size) || 16} height=${(props && props.size) || 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${children}</svg>`;
+      const Sun = (p) => svg(html`<circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />`, p);
+      const Moon = (p) => svg(html`<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />`, p);
+      const Key = (p) => svg(html`<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />`, p);
+      const Trash = (p) => svg(html`<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />`, p);
+      const Clipboard = (p) => svg(html`<rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />`, p);
+      const Paste = (p) => svg(html`<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" />`, p);
+      const Sparkle = (p) => svg(html`<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" /><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" />`, p);
+      const Check = (p) => svg(html`<path d="M20 6L9 17l-5-5" />`, p);
+      const Doc = (p) => svg(html`<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />`, p);
+      const Download = (p) => svg(html`<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />`, p);
+      const Md = (p) => svg(html`<rect x="2" y="5" width="20" height="14" rx="2" /><path d="M6 15V9l3 3 3-3v6M18 9v6M15 12l3 3 3-3" />`, p);
+
+      /* ============================ Theme hook ============================ */
+      function useTheme() {
+        const [theme, setTheme] = useState(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+        useEffect(() => {
+          document.documentElement.classList.toggle('dark', theme === 'dark');
+          try { localStorage.setItem(THEME_STORAGE, theme); } catch {}
+        }, [theme]);
+        return { theme, toggle: () => setTheme((t) => (t === 'dark' ? 'light' : 'dark')) };
+      }
+
+      /* ============================ TextPanel ============================ */
+      function countWords(t) { const s = t.trim(); return s ? s.split(/\s+/).length : 0; }
+
+      function TextPanel({ title, subtitle, value, onChange, placeholder, actions, accent }) {
+        const words = useMemo(() => countWords(value), [value]);
+        const dot = accent === 'emerald' ? 'bg-emerald-500' : 'bg-indigo-500';
+        return html`
+          <section class="card flex min-h-[420px] flex-col overflow-hidden">
+            <header class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+              <div class="flex items-center gap-2">
+                <span class=${'h-2.5 w-2.5 rounded-full ' + dot}></span>
+                <div>
+                  <h2 class="text-sm font-semibold text-slate-900 dark:text-white">${title}</h2>
+                  ${subtitle && html`<p class="text-xs text-slate-500 dark:text-slate-400">${subtitle}</p>`}
+                </div>
+              </div>
+              <div class="flex flex-wrap items-center gap-1.5">${actions}</div>
+            </header>
+            <textarea value=${value} onChange=${(e) => onChange(e.target.value)} placeholder=${placeholder} spellcheck="true"
+              class="scroll-area flex-1 resize-none bg-transparent px-4 py-3 font-mono text-[13px] leading-relaxed text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-200 dark:placeholder:text-slate-600"></textarea>
+            <footer class="flex items-center justify-end gap-4 border-t border-slate-200 px-4 py-2 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+              <span><span class="font-semibold text-slate-700 dark:text-slate-300">${words.toLocaleString()}</span> words</span>
+              <span><span class="font-semibold text-slate-700 dark:text-slate-300">${value.length.toLocaleString()}</span> characters</span>
+            </footer>
+          </section>`;
+      }
+
+      function JobDescriptionPanel({ value, onChange }) {
+        const handlePaste = async () => {
+          try { const t = await navigator.clipboard.readText(); if (t) onChange(value ? value + '\n' + t : t); }
+          catch { alert('Clipboard access was blocked. Paste manually with ⌘/Ctrl + V.'); }
+        };
+        const actions = html`
+          <button class="btn-ghost" onClick=${handlePaste} title="Paste from clipboard">${Paste()} Paste</button>
+          <button class="btn-ghost" onClick=${() => onChange(EXAMPLE_JOB_DESCRIPTION)} title="Load example">${Sparkle()} Example</button>
+          <button class="btn-ghost" onClick=${() => onChange('')} disabled=${!value} title="Clear">${Trash()} Clear</button>`;
+        return html`<${TextPanel} title="Job Description" subtitle="Paste the complete job posting" value=${value} onChange=${onChange} accent="indigo" placeholder="Paste the full job description here…" actions=${actions} />`;
+      }
+
+      function ResumePanel({ value, onChange }) {
+        const actions = html`
+          <button class="btn-ghost" onClick=${() => onChange(EXAMPLE_RESUME)} title="Load example">${Sparkle()} Example</button>
+          <button class="btn-ghost" onClick=${() => onChange('')} disabled=${!value} title="Clear">${Trash()} Clear</button>`;
+        return html`<${TextPanel} title="My Resume" subtitle="Paste your current resume" value=${value} onChange=${onChange} accent="emerald" placeholder="Paste your current resume here…" actions=${actions} />`;
+      }
+
+      /* ============================ ActionBar ============================ */
+      function ActionBar({ onOptimize, loading, disabled, hint }) {
+        return html`
+          <div class="sticky bottom-4 z-30">
+            <div class="card flex flex-col items-center gap-3 p-3 shadow-lg sm:flex-row sm:justify-between">
+              <p class="text-xs text-slate-500 dark:text-slate-400">${hint || 'Truthful, ATS-optimized rewriting powered by Claude.'}</p>
+              <button onClick=${onOptimize} disabled=${disabled || loading} class="btn-primary w-full px-8 py-3 text-base sm:w-auto">
+                ${Sparkle({ size: 18 })} ${loading ? 'Optimizing…' : 'Optimize Resume'}
+              </button>
+            </div>
+          </div>`;
+      }
+
+      /* ============================ Loading ============================ */
+      const LOADING_STEPS = [
+        'Analyzing the job description…',
+        'Extracting required skills, technologies & ATS keywords…',
+        'Analyzing your resume…',
+        'Identifying gaps and weak wording…',
+        'Rewriting your resume — truthfully…',
+        'Scoring ATS compatibility & alignment…',
+      ];
+      function Loading() {
+        const [step, setStep] = useState(0);
+        useEffect(() => {
+          const id = setInterval(() => setStep((s) => (s < LOADING_STEPS.length - 1 ? s + 1 : s)), 2600);
+          return () => clearInterval(id);
+        }, []);
+        return html`
+          <div class="card animate-fade-in flex flex-col items-center gap-6 px-6 py-14">
+            <div class="relative h-16 w-16">
+              <div class="absolute inset-0 rounded-full border-4 border-slate-200 dark:border-slate-800"></div>
+              <div class="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-indigo-500"></div>
+              <div class="absolute inset-2 flex items-center justify-center rounded-full bg-indigo-50 text-indigo-500 dark:bg-indigo-500/10">${Sparkle({ size: 20 })}</div>
+            </div>
+            <div class="w-full max-w-md space-y-2">
+              ${LOADING_STEPS.map((label, i) => html`
+                <div key=${i} class=${'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ' + (i === step ? 'bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300' : i < step ? 'text-slate-400 line-through dark:text-slate-600' : 'text-slate-400 dark:text-slate-600')}>
+                  <span class=${'flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] ' + (i < step ? 'bg-emerald-500 text-white' : i === step ? 'bg-indigo-500 text-white' : 'border border-slate-300 dark:border-slate-700')}>${i < step ? '✓' : ''}</span>
+                  ${label}
+                </div>`)}
+            </div>
+            <div class="h-1 w-full max-w-md overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+              <div class="h-full rounded-full bg-indigo-500 transition-[width] duration-700 ease-out" style=${{ width: ((step + 1) / LOADING_STEPS.length) * 100 + '%' }}></div>
+            </div>
+          </div>`;
+      }
+
+      /* ============================ ApiKeyModal ============================ */
+      function ApiKeyModal({ open, onClose }) {
+        const [key, setKey] = useState('');
+        useEffect(() => { if (open) setKey(getApiKey()); }, [open]);
+        if (!open) return null;
+        const save = () => { setApiKey(key.trim()); onClose(); };
+        return html`
+          <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm" onClick=${onClose}>
+            <div class="card animate-fade-in w-full max-w-md p-6" onClick=${(e) => e.stopPropagation()}>
+              <div class="mb-4 flex items-center gap-3">
+                <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-500 dark:bg-indigo-500/10">${Key({ size: 20 })}</span>
+                <div>
+                  <h3 class="text-base font-semibold text-slate-900 dark:text-white">Anthropic API Key</h3>
+                  <p class="text-xs text-slate-500 dark:text-slate-400">Stored locally in your browser only</p>
+                </div>
+              </div>
+              <input type="password" value=${key} onChange=${(e) => setKey(e.target.value)} placeholder="sk-ant-…" autoFocus
+                onKeyDown=${(e) => e.key === 'Enter' && save()}
+                class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-sm text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+              <p class="mt-3 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                This app runs entirely in your browser with no backend. Your key is saved to <code class="mx-1 rounded bg-slate-100 px-1 dark:bg-slate-800">localStorage</code> and used only to call Claude directly. Get a key at ${' '}
+                <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" class="text-indigo-600 underline dark:text-indigo-400">console.anthropic.com</a>.
+              </p>
+              <div class="mt-5 flex justify-end gap-2">
+                <button class="btn-secondary" onClick=${onClose}>Cancel</button>
+                <button class="btn-primary" onClick=${save}>Save Key</button>
+              </div>
+            </div>
+          </div>`;
+      }
+
+      /* ============================ ScoreBars ============================ */
+      const SCORE_ORDER = [
+        { key: 'ats', label: 'ATS Score' }, { key: 'readability', label: 'Readability' },
+        { key: 'keywordDensity', label: 'Keyword Density' }, { key: 'skillsCoverage', label: 'Skills Coverage' },
+        { key: 'overallMatch', label: 'Overall Match' },
+      ];
+      const barColor = (v) => (v >= 80 ? 'bg-emerald-500' : v >= 60 ? 'bg-amber-500' : 'bg-rose-500');
+      const textColor = (v) => (v >= 80 ? 'text-emerald-600 dark:text-emerald-400' : v >= 60 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400');
+      function ScoreBars({ scores }) {
+        return html`
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            ${SCORE_ORDER.map(({ key, label }) => {
+              const v = Math.round(scores[key] || 0);
+              return html`
+                <div key=${key} class="card p-4">
+                  <div class="flex items-baseline justify-between">
+                    <span class="text-xs font-medium text-slate-500 dark:text-slate-400">${label}</span>
+                    <span class=${'text-lg font-bold ' + textColor(v)}>${v}%</span>
+                  </div>
+                  <div class="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div class=${'h-full rounded-full transition-[width] duration-700 ease-out ' + barColor(v)} style=${{ width: v + '%' }}></div>
+                  </div>
+                </div>`;
+            })}
+          </div>`;
+      }
+
+      /* ============================ MarkdownView (with highlight) ============================ */
+      function escapeRegExp(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+      function MarkdownView({ markdown, highlight }) {
+        const ref = useRef(null);
+        useEffect(() => {
+          if (!ref.current) return;
+          ref.current.innerHTML = window.marked.parse(markdown || '');
+          const terms = (highlight || []).map((h) => h.trim()).filter((h) => h.length > 2).sort((a, b) => b.length - a.length).map(escapeRegExp);
+          if (!terms.length) return;
+          const re = new RegExp('(' + terms.join('|') + ')', 'gi');
+          const walker = document.createTreeWalker(ref.current, NodeFilter.SHOW_TEXT, null);
+          const nodes = [];
+          while (walker.nextNode()) {
+            const n = walker.currentNode;
+            if (n.parentNode && n.parentNode.nodeName !== 'MARK' && re.test(n.nodeValue)) nodes.push(n);
+          }
+          nodes.forEach((n) => {
+            const frag = document.createDocumentFragment();
+            let last = 0; const s = n.nodeValue; re.lastIndex = 0; let m;
+            while ((m = re.exec(s)) !== null) {
+              if (m.index > last) frag.appendChild(document.createTextNode(s.slice(last, m.index)));
+              const mark = document.createElement('mark'); mark.textContent = m[0]; frag.appendChild(mark);
+              last = m.index + m[0].length;
+            }
+            if (last < s.length) frag.appendChild(document.createTextNode(s.slice(last)));
+            n.parentNode.replaceChild(frag, n);
+          });
+        }, [markdown, highlight]);
+        return html`<div ref=${ref} class="prose-resume max-w-none"></div>`;
+      }
+
+      /* ============================ Tab: Optimized Resume ============================ */
+      function OptimizedResumeTab({ result }) {
+        const [copied, setCopied] = useState(false);
+        const [highlightOn, setHighlightOn] = useState(true);
+        const handleCopy = async () => { await copyToClipboard(result.optimizedResume); setCopied(true); setTimeout(() => setCopied(false), 1800); };
+        return html`
+          <div class="animate-fade-in space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                <input type="checkbox" checked=${highlightOn} onChange=${(e) => setHighlightOn(e.target.checked)} class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                Highlight inserted ATS keywords
+                <span class="rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-800 dark:bg-emerald-500/25 dark:text-emerald-200">example</span>
+              </label>
+              <div class="flex flex-wrap items-center gap-2">
+                <button class="btn-secondary" onClick=${handleCopy}>${copied ? Check() : Clipboard()} ${copied ? 'Copied' : 'Copy'}</button>
+                <button class="btn-secondary" onClick=${() => exportPdf(result.optimizedResume)}>${Download()} PDF</button>
+                <button class="btn-secondary" onClick=${() => exportDocx(result.optimizedResume)}>${Doc()} DOCX</button>
+                <button class="btn-secondary" onClick=${() => exportMarkdown(result.optimizedResume)}>${Md()} Markdown</button>
+              </div>
+            </div>
+            <div class="card scroll-area max-h-[70vh] overflow-y-auto p-6 sm:p-8">
+              <${MarkdownView} markdown=${result.optimizedResume} highlight=${highlightOn ? result.insertedKeywords : []} />
+            </div>
+          </div>`;
+      }
+
+      /* ============================ Tab: ATS Report ============================ */
+      function MatchRing({ percent }) {
+        const r = 52, c = 2 * Math.PI * r, offset = c - (percent / 100) * c;
+        const color = percent >= 80 ? 'text-emerald-500' : percent >= 60 ? 'text-amber-500' : 'text-rose-500';
+        return html`
+          <div class="relative flex h-36 w-36 items-center justify-center">
+            <svg class="h-36 w-36 -rotate-90" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r=${r} fill="none" stroke-width="10" class="stroke-slate-100 dark:stroke-slate-800" />
+              <circle cx="60" cy="60" r=${r} fill="none" stroke-width="10" stroke-linecap="round" stroke-dasharray=${c} stroke-dashoffset=${offset} class=${color + ' transition-[stroke-dashoffset] duration-1000 ease-out'} stroke="currentColor" />
+            </svg>
+            <div class="absolute flex flex-col items-center">
+              <span class=${'text-3xl font-bold ' + color}>${Math.round(percent)}%</span>
+              <span class="text-xs text-slate-500 dark:text-slate-400">ATS Match</span>
+            </div>
+          </div>`;
+      }
+      function KeywordCard({ title, items, tone }) {
+        const chip = tone === 'emerald' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200' : 'bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-200';
+        return html`
+          <div class="card p-5">
+            <div class="mb-3 flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-slate-900 dark:text-white">${title}</h3>
+              <span class="text-xs text-slate-500 dark:text-slate-400">${items.length}</span>
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              ${items.map((k, i) => html`<span key=${i} class=${'rounded-md px-2 py-1 text-xs font-medium ' + chip}>${k}</span>`)}
+              ${items.length === 0 && html`<span class="text-sm text-slate-500">None.</span>`}
+            </div>
+          </div>`;
+      }
+      function AtsReportTab({ result }) {
+        const a = result.atsReport;
+        return html`
+          <div class="animate-fade-in space-y-4">
+            <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <div class="card flex flex-col items-center justify-center gap-2 p-6">
+                <${MatchRing} percent=${a.matchPercent} />
+                <p class="text-center text-xs text-slate-500 dark:text-slate-400">Estimated compatibility after optimization</p>
+              </div>
+              <div class="card p-5 lg:col-span-2">
+                <h3 class="mb-3 text-sm font-semibold text-slate-900 dark:text-white">Skills Alignment</h3>
+                <div class="scroll-area max-h-64 space-y-3 overflow-y-auto pr-1">
+                  ${a.skillsAlignment.length === 0 && html`<p class="text-sm text-slate-500">No skills analysis available.</p>`}
+                  ${a.skillsAlignment.map((s, i) => html`
+                    <div key=${i}>
+                      <div class="flex items-center justify-between text-sm">
+                        <span class="font-medium text-slate-700 dark:text-slate-200">${s.skill}</span>
+                        <span class="text-slate-500 dark:text-slate-400">${s.coverage}%</span>
+                      </div>
+                      <div class="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                        <div class=${'h-full rounded-full ' + (s.coverage >= 80 ? 'bg-emerald-500' : s.coverage >= 50 ? 'bg-amber-500' : 'bg-rose-500')} style=${{ width: s.coverage + '%' }}></div>
+                      </div>
+                      ${s.note && html`<p class="mt-1 text-xs text-slate-500 dark:text-slate-400">${s.note}</p>`}
+                    </div>`)}
+                </div>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <${KeywordCard} title="Matched Keywords" items=${a.matchedKeywords} tone="emerald" />
+              <${KeywordCard} title="Missing Keywords" items=${a.missingKeywords} tone="rose" />
+            </div>
+            <div class="card p-5">
+              <h3 class="mb-3 text-sm font-semibold text-slate-900 dark:text-white">Suggested Improvements</h3>
+              <ul class="space-y-2">
+                ${a.suggestedImprovements.map((s, i) => html`<li key=${i} class="flex gap-2 text-sm text-slate-700 dark:text-slate-200"><span class="mt-0.5 text-indigo-500">→</span>${s}</li>`)}
+                ${a.suggestedImprovements.length === 0 && html`<li class="text-sm text-slate-500">No suggestions — great match!</li>`}
+              </ul>
+            </div>
+          </div>`;
+      }
+
+      /* ============================ Tab: Keyword Comparison ============================ */
+      const STATUS_META = {
+        present: { symbol: '✓', label: 'Present', className: 'text-emerald-600 dark:text-emerald-400' },
+        weak: { symbol: '△', label: 'Weak', className: 'text-amber-600 dark:text-amber-400' },
+        missing: { symbol: '✗', label: 'Missing', className: 'text-rose-600 dark:text-rose-400' },
+      };
+      const FILTERS = ['all', 'present', 'weak', 'missing'];
+      function KeywordComparisonTab({ result }) {
+        const [filter, setFilter] = useState('all');
+        const rows = useMemo(() => (filter === 'all' ? result.keywordComparison : result.keywordComparison.filter((r) => r.status === filter)), [filter, result.keywordComparison]);
+        const counts = useMemo(() => { const c = { present: 0, weak: 0, missing: 0 }; result.keywordComparison.forEach((r) => { if (c[r.status] != null) c[r.status]++; }); return c; }, [result.keywordComparison]);
+        return html`
+          <div class="animate-fade-in space-y-4">
+            <div class="flex flex-wrap gap-2">
+              ${FILTERS.map((f) => html`
+                <button key=${f} onClick=${() => setFilter(f)} class=${'rounded-lg px-3 py-1.5 text-xs font-medium capitalize transition-colors ' + (filter === f ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700')}>
+                  ${f}${f !== 'all' && html`<span class="ml-1.5 opacity-70">${counts[f]}</span>`}
+                </button>`)}
+            </div>
+            <div class="card overflow-hidden">
+              <div class="scroll-area max-h-[65vh] overflow-y-auto">
+                <table class="w-full border-collapse text-sm">
+                  <thead class="sticky top-0 z-10 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                    <tr><th class="px-4 py-3 font-medium">Job Keyword</th><th class="px-4 py-3 font-medium">Resume</th><th class="px-4 py-3 text-center font-medium">Status</th></tr>
+                  </thead>
+                  <tbody>
+                    ${rows.map((row, i) => {
+                      const m = STATUS_META[row.status] || STATUS_META.missing;
+                      return html`
+                        <tr key=${i} class="border-t border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50">
+                          <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">${row.keyword}</td>
+                          <td class="px-4 py-3 text-slate-600 dark:text-slate-300">${row.resume || html`<span class="italic text-slate-400">—</span>`}</td>
+                          <td class="px-4 py-3 text-center"><span class=${'inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-semibold ' + m.className}><span class="text-sm">${m.symbol}</span> ${m.label}</span></td>
+                        </tr>`;
+                    })}
+                    ${rows.length === 0 && html`<tr><td colSpan="3" class="px-4 py-8 text-center text-sm text-slate-500">No keywords in this category.</td></tr>`}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>`;
+      }
+
+      /* ============================ Tab: Change Log ============================ */
+      const TYPE_META = {
+        keyword: { label: 'ATS Keyword', className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200' },
+        wording: { label: 'Stronger Wording', className: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200' },
+        clarity: { label: 'Clarity', className: 'bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200' },
+        grammar: { label: 'Grammar', className: 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200' },
+        reorganize: { label: 'Reorganized', className: 'bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-200' },
+      };
+      function ChangeLogTab({ result }) {
+        const log = result.changeLog;
+        return html`
+          <div class="animate-fade-in space-y-4">
+            <p class="text-sm text-slate-500 dark:text-slate-400">${log.length} change${log.length === 1 ? '' : 's'} made — each one preserves the truth of your experience.</p>
+            <div class="space-y-4">
+              ${log.map((c, i) => {
+                const m = TYPE_META[c.type] || TYPE_META.wording;
+                return html`
+                  <div key=${i} class="card p-4">
+                    <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <span class="text-xs font-medium text-slate-500 dark:text-slate-400">${c.section}</span>
+                      <span class=${'rounded-md px-2 py-0.5 text-xs font-medium ' + m.className}>${m.label}</span>
+                    </div>
+                    <div class="space-y-2">
+                      <div class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 dark:border-rose-500/30 dark:bg-rose-500/10">
+                        <span class="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-rose-500 dark:text-rose-400">Original</span>
+                        <p class="text-sm text-rose-900 line-through decoration-rose-400/60 dark:text-rose-200">${c.original}</p>
+                      </div>
+                      <div class="flex justify-center text-slate-400">↓</div>
+                      <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+                        <span class="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">Improved</span>
+                        <p class="text-sm text-emerald-900 dark:text-emerald-100">${c.improved}</p>
+                      </div>
+                    </div>
+                    <div class="mt-3 rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/50">
+                      <span class="text-xs font-medium text-indigo-600 dark:text-indigo-400">Why: </span>
+                      <span class="text-xs text-slate-600 dark:text-slate-300">${c.reason}</span>
+                    </div>
+                  </div>`;
+              })}
+              ${log.length === 0 && html`<div class="card p-8 text-center text-sm text-slate-500">No changes were recorded.</div>`}
+            </div>
+          </div>`;
+      }
+
+      /* ============================ OutputTabs ============================ */
+      const TABS = [
+        { id: 'resume', label: 'Optimized Resume' }, { id: 'report', label: 'ATS Match Report' },
+        { id: 'keywords', label: 'Keyword Comparison' }, { id: 'changes', label: 'Change Log' },
+      ];
+      function OutputTabs({ result }) {
+        const [tab, setTab] = useState('resume');
+        return html`
+          <div class="animate-fade-in space-y-6">
+            <div>
+              <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Scoring</h2>
+              <${ScoreBars} scores=${result.scores} />
+            </div>
+            <div class="card overflow-hidden">
+              <div class="scroll-area flex gap-1 overflow-x-auto border-b border-slate-200 p-1.5 dark:border-slate-800">
+                ${TABS.map((t) => html`
+                  <button key=${t.id} onClick=${() => setTab(t.id)} class=${'whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-colors ' + (tab === t.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800')}>${t.label}</button>`)}
+              </div>
+              <div class="p-4 sm:p-6">
+                ${tab === 'resume' && html`<${OptimizedResumeTab} result=${result} />`}
+                ${tab === 'report' && html`<${AtsReportTab} result=${result} />`}
+                ${tab === 'keywords' && html`<${KeywordComparisonTab} result=${result} />`}
+                ${tab === 'changes' && html`<${ChangeLogTab} result=${result} />`}
+              </div>
+            </div>
+          </div>`;
+      }
+
+      /* ============================ EmptyState ============================ */
+      function EmptyState() {
+        return html`
+          <div class="card flex flex-col items-center gap-3 px-6 py-16 text-center">
+            <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-500 dark:bg-indigo-500/10">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M9 15l2 2 4-4" /></svg>
+            </div>
+            <h3 class="text-base font-semibold text-slate-900 dark:text-white">Your optimized resume will appear here</h3>
+            <p class="max-w-md text-sm text-slate-500 dark:text-slate-400">Paste a job description and your resume above, then click <span class="font-medium text-indigo-600 dark:text-indigo-400">Optimize Resume</span>. Claude rewrites it for ATS compatibility while staying 100% truthful.</p>
+          </div>`;
+      }
+
+      /* ============================ App ============================ */
+      function App() {
+        const { theme, toggle } = useTheme();
+        const [jobDescription, setJobDescription] = useState('');
+        const [resume, setResume] = useState('');
+        const [result, setResult] = useState(null);
+        const [loading, setLoading] = useState(false);
+        const [error, setError] = useState(null);
+        const [keyModalOpen, setKeyModalOpen] = useState(false);
+        const [hasKey, setHasKey] = useState(!!getApiKey());
+
+        const canOptimize = jobDescription.trim().length > 20 && resume.trim().length > 20;
+
+        const handleOptimize = async () => {
+          setError(null);
+          if (!getApiKey()) { setKeyModalOpen(true); return; }
+          setLoading(true); setResult(null);
+          try {
+            const res = await optimizeResume(jobDescription, resume);
+            setResult(res);
+            requestAnimationFrame(() => { const el = document.getElementById('results'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+          } catch (err) { setError(err.message || 'Something went wrong.'); }
+          finally { setLoading(false); }
+        };
+
+        const closeKeyModal = () => { setKeyModalOpen(false); setHasKey(!!getApiKey()); };
+        const hint = !canOptimize ? 'Paste a job description and your resume to begin.' : undefined;
+
+        return html`
+          <div class="min-h-screen">
+            <header class="sticky top-0 z-40 border-b border-slate-200/80 bg-slate-50/80 backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-950/80">
+              <div class="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
+                <div class="flex items-center gap-3">
+                  <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm">${Sparkle({ size: 20 })}</div>
+                  <div>
+                    <h1 class="text-base font-bold leading-tight text-slate-900 dark:text-white">ATS Resume Optimizer</h1>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Truthful resume optimization for any job</p>
+                  </div>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <button class="btn-ghost" onClick=${() => setKeyModalOpen(true)} title="Set Anthropic API key">${Key()}<span class="hidden sm:inline">${hasKey ? 'API Key' : 'Add Key'}</span></button>
+                  <button class="btn-ghost !px-2" onClick=${toggle} title="Toggle theme">${theme === 'dark' ? Sun() : Moon()}</button>
+                </div>
+              </div>
+            </header>
+
+            <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+              <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                <${JobDescriptionPanel} value=${jobDescription} onChange=${setJobDescription} />
+                <${ResumePanel} value=${resume} onChange=${setResume} />
+              </div>
+              <div class="mt-5"><${ActionBar} onOptimize=${handleOptimize} loading=${loading} disabled=${!canOptimize} hint=${hint} /></div>
+              ${error && html`<div class="mt-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">${error}</div>`}
+              <div id="results" class="mt-8 scroll-mt-20">
+                ${loading && html`<${Loading} />`}
+                ${!loading && result && html`<${OutputTabs} result=${result} />`}
+                ${!loading && !result && !error && html`<${EmptyState} />`}
+              </div>
+            </main>
+
+            <footer class="mx-auto max-w-7xl px-4 py-8 text-center text-xs text-slate-400 dark:text-slate-600 sm:px-6">Runs entirely in your browser · Your resume and API key never leave your device except to call Claude directly.</footer>
+
+            <${ApiKeyModal} open=${keyModalOpen} onClose=${closeKeyModal} />
+          </div>`;
+      }
+
+      ReactDOM.createRoot(document.getElementById('root')).render(html`<${App} />`);
+    </script>
+  </body>
+</html>

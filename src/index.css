@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium
+      transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500
+      disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply btn text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800;
+  }
+  .btn-secondary {
+    @apply btn border border-slate-200 bg-white text-slate-700 hover:bg-slate-50
+      dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700;
+  }
+  .btn-primary {
+    @apply btn bg-indigo-600 text-white hover:bg-indigo-500 shadow-sm shadow-indigo-600/20;
+  }
+}
+
+/* Custom scrollbars */
+textarea,
+.scroll-area {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 163 184 / 0.4) transparent;
+}
+textarea::-webkit-scrollbar,
+.scroll-area::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+textarea::-webkit-scrollbar-thumb,
+.scroll-area::-webkit-scrollbar-thumb {
+  background: rgb(148 163 184 / 0.4);
+  border-radius: 9999px;
+}
+
+/* Markdown output styling */
+.prose-resume {
+  @apply text-sm leading-relaxed text-slate-800 dark:text-slate-200;
+}
+.prose-resume h1 {
+  @apply mb-1 mt-4 text-xl font-bold text-slate-900 dark:text-white;
+}
+.prose-resume h2 {
+  @apply mb-1 mt-4 border-b border-slate-200 pb-1 text-base font-bold uppercase tracking-wide text-slate-900 dark:border-slate-700 dark:text-white;
+}
+.prose-resume h3 {
+  @apply mb-0.5 mt-3 text-sm font-semibold text-slate-900 dark:text-white;
+}
+.prose-resume p {
+  @apply my-1.5;
+}
+.prose-resume ul {
+  @apply my-1.5 list-disc space-y-1 pl-5;
+}
+.prose-resume ol {
+  @apply my-1.5 list-decimal space-y-1 pl-5;
+}
+.prose-resume a {
+  @apply text-indigo-600 underline dark:text-indigo-400;
+}
+.prose-resume strong {
+  @apply font-semibold text-slate-900 dark:text-white;
+}
+.prose-resume hr {
+  @apply my-3 border-slate-200 dark:border-slate-700;
+}
+.prose-resume table {
+  @apply my-2 w-full border-collapse text-sm;
+}
+.prose-resume th,
+.prose-resume td {
+  @apply border border-slate-200 px-2 py-1 text-left dark:border-slate-700;
+}
